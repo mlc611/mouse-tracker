@@ -18,7 +18,6 @@ using namespace std;
 #include<opencv2/highgui/highgui.hpp>
 #include<opencv2/imgproc/imgproc.hpp>
 #include<iostream>
-#include<conio.h>  // remove this line if not using Windows OS
 #define SHOW_STEPS // un-comment | comment this line to show steps or not
 
 // const global variables
@@ -35,8 +34,6 @@ void addNewBlob(Blob &currentFrameBlob, std::vector<Blob> &existingBlobs);
 double distanceBetweenPoints(cv::Point point1, cv::Point point2);
 void drawAndShowContours(cv::Size imageSize, std::vector<std::vector<cv::Point> > contours, std::string strImageName);
 void drawAndShowContours(cv::Size imageSize, std::vector<Blob> blobs, std::string strImageName);
-bool checkIfBlobsCrossedTheLineRight(std::vector<Blob> &blobs, int &intHorizontalLinePosition, int &carCountRight);
-bool checkIfBlobsCrossedTheLineLeft(std::vector<Blob> &blobs, int &intHorizontalLinePositionLeft, int &carCountLeft);
 void drawBlobInfoOnImage(std::vector<Blob> &blobs, cv::Mat &imgFrame2Copy);
 void drawCarCountOnImage(int &carCountRight, cv::Mat &imgFrame2Copy);
 
@@ -45,51 +42,80 @@ std::stringstream date;
 int carCountLeft, intVerticalLinePosition, carCountRight = 0;
 
 int main(void) {				    
-	cv::VideoCapture capVideo;
+    cv::VideoCapture capVideo;
     cv::Mat imgFrame1;
     cv::Mat imgFrame2;
     std::vector<Blob> blobs;	
-    cv::Point crossingLine[2];
-	cv::Point crossingLineLeft[2];	
 
-    capVideo.open("../../src/HSCC Interstate Highway Surveillance System - TEST VIDEO.mp4");
+    //capVideo.open("/Users/collins/OSI/video_processing/mouse.avi");
+    //capVideo.open("/Users/collins/OSI/video_processing/rats.avi");
+    //capVideo.open("/Users/collins/OSI/video_processing/short_mouse.avi");
+    //capVideo.open("/Users/collins/OSI/video_processing/2mice.avi");
+    capVideo.open("../short_mouse.avi");
 
     if (!capVideo.isOpened()) {                                                 // if unable to open video file
         std::cout << "error reading video file" << std::endl << std::endl;      // show error message
-        _getch();																// remove this line if not using Windows OS
         return(0);                                                              // and exit program
     }
 
     if (capVideo.get(CV_CAP_PROP_FRAME_COUNT) < 2) {
         std::cout << "error: video file must have at least two frames";
-        _getch();																// remove this line if not using Windows OS
         return(0);
     }
 
-    capVideo.read(imgFrame1);
-    capVideo.read(imgFrame2);
+    /* MLC adds video output */
+        std::cout << "Frame size is: " << unsigned(capVideo.get(3)) << "x" << unsigned(capVideo.get(4)) << std::endl << std::endl;      
 
-	//CONTROL LINE FOR CARCOUNT ~AREA1 (RIGHT WAY)
-	int intHorizontalLinePosition = (int)std::round((double)imgFrame1.rows * 0.35);
-	intHorizontalLinePosition = intHorizontalLinePosition*1.40;
-	intVerticalLinePosition = (int)std::round((double)imgFrame1.cols * 0.35);
 
-	crossingLine[0].x = 515;
-	crossingLine[0].y = intHorizontalLinePosition;
+    cv::VideoWriter outputVideo;                    // Open the output
+    int ex = static_cast<int>(capVideo.get(CV_CAP_PROP_FOURCC));
+    cv::Size S = cv::Size((int) capVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) capVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
+    const string NAME = "output.avi";
+    const bool askOutputType = 0; // If false it will use the inputs codec type
+    if (askOutputType)
+        outputVideo.open(NAME, ex=-1, capVideo.get(CV_CAP_PROP_FPS), S, true);
+    else
+        outputVideo.open(NAME, CV_FOURCC('M','J','P','G'), capVideo.get(CV_CAP_PROP_FPS), S, true);
 
-	crossingLine[1].x = imgFrame1.cols - 1;
-	crossingLine[1].y = intHorizontalLinePosition;
+    if (!outputVideo.isOpened())
+    {
+        std::cout << "Could not open output video for write:" << std::endl << std::endl;      // show error message
+        return -1;
+    }
 
-	//CONTROL LINE FOR CARCOUNT ~AREA2 (LEFT WAY)
-	crossingLineLeft[0].x = 0;
-	crossingLineLeft[0].y = intHorizontalLinePosition;
 
-	crossingLineLeft[1].x = 300;
-	crossingLineLeft[1].y = intHorizontalLinePosition;
+
+
+
+
+
+    bool ret = true;
+   ret =  capVideo.read(imgFrame1);
+    if (ret == false) { return(0);}
+    ret = capVideo.read(imgFrame2);
+    if (ret == false) { return(0);}
+
+
+
 
     char chCheckForEscKey = 0;
     bool blnFirstFrame = true;
     int frameCount = 2;
+    
+
+
+    /*Ahmet's algorithm explanation
+     *
+     * Convert the source image to binary images by applying thresholding with 
+     * several thresholds from minThreshold (inclusive) to maxThreshold (exclusive)
+     * with distance thresholdStep between neighboring thresholds.
+     * 
+     * Extract connected components from every binary image by findContours and calculate their centers.
+     * 
+     * Group centers from several binary images by their coordinates. Close centers form one group that
+     * corresponds to one blob, which is controlled by the minDistBetweenBlobs parameter.
+     * 
+     * From the groups, estimate final centers of blobs and their radiuses and return as locations and sizes of keypoints.*/
 
     while (capVideo.isOpened() && chCheckForEscKey != 27) {
         std::vector<Blob> currentFrameBlobs;
@@ -102,6 +128,7 @@ int main(void) {
         cv::GaussianBlur(imgFrame1Copy, imgFrame1Copy, cv::Size(5, 5), 0);
         cv::GaussianBlur(imgFrame2Copy, imgFrame2Copy, cv::Size(5, 5), 0);
         cv::absdiff(imgFrame1Copy, imgFrame2Copy, imgDifference);
+        // Base threshold is difference between frames -MC
         cv::threshold(imgDifference, imgThresh, 30, 255.0, CV_THRESH_BINARY);
         cv::imshow("imgThresh", imgThresh);
         cv::Mat structuringElement3x3 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
@@ -109,12 +136,19 @@ int main(void) {
         cv::Mat structuringElement7x7 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
         cv::Mat structuringElement15x15 = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(15, 15));
 
-        for (unsigned int i = 0; i < 2; i++) {
+        // Loop dilates and erodes the threshold several times. A smoothing process
+        // with a tendeancy to dilate features and connect disjointed sections.
+        // 5 iterations is good for Pishan's video - MC
+        for (unsigned int i = 0; i < 5; i++) {
             cv::dilate(imgThresh, imgThresh, structuringElement5x5);
             cv::dilate(imgThresh, imgThresh, structuringElement5x5);
             cv::erode(imgThresh, imgThresh, structuringElement5x5);
         }
 
+        /* If above thresholding operations are insufficient, we can add a second operation
+         * here. It could act on a still frame to discriminate between light and dark patches.
+         * Rodents are either white or black. The difference threshold could be cross referenced 
+         * against the solid-patch/light-dark threshold to improve results. -MC*/
         cv::Mat imgThreshCopy = imgThresh.clone();
         std::vector<std::vector<cv::Point> > contours;
         cv::findContours(imgThreshCopy, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -123,21 +157,28 @@ int main(void) {
 
         std::vector<std::vector<cv::Point> > convexHulls(contours.size());
 
+        // Convex Hulls draw an envelope around the contours. That is, since mice are solid,
+        // only the edges will be detected frame-to-frame. Convex hulls fills in their middle. -MC
         for (unsigned int i = 0; i < contours.size(); i++) {
             cv::convexHull(contours[i], convexHulls[i]);
         }
 
         drawAndShowContours(imgThresh.size(), convexHulls, "imgConvexHulls");
 
+        /* Each convex hull is evaluated for its worth as a blob. Parameters like 
+         * area and aspect ratio establish the convex hull's blobiness. Those worthy
+         * are included in the list of currentFrameBlobs -MC */
         for (auto &convexHull : convexHulls) {
             Blob possibleBlob(convexHull);
 
-            if (possibleBlob.currentBoundingRect.area() > 400 &&
-                possibleBlob.dblCurrentAspectRatio > 0.2 &&
-                possibleBlob.dblCurrentAspectRatio < 4.0 &&
-                possibleBlob.currentBoundingRect.width > 30 &&
-                possibleBlob.currentBoundingRect.height > 30 &&
-                possibleBlob.dblCurrentDiagonalSize > 60.0 &&
+            // Try adding a convexity metric - MC
+            // See Blob.h for more ideas - MC
+            if (possibleBlob.currentBoundingRect.area() > 600 &&
+                possibleBlob.dblCurrentAspectRatio > 0.3 &&
+                possibleBlob.dblCurrentAspectRatio < 3.0 &&
+                possibleBlob.currentBoundingRect.width > 50 &&
+                possibleBlob.currentBoundingRect.height > 50 &&
+                possibleBlob.dblCurrentDiagonalSize > 70.0 &&
                 (cv::contourArea(possibleBlob.currentContour) / (double)possibleBlob.currentBoundingRect.area()) > 0.50) {
 					currentFrameBlobs.push_back(possibleBlob);
             }
@@ -151,39 +192,25 @@ int main(void) {
             }
         } 
 		else {
+            // Handles blob tracking frame-to-frame. Moves currentFrameBlobs to blobs.
+            // Includes parameters such as match distance and tracking time. - MC
             matchCurrentFrameBlobsToExistingBlobs(blobs, currentFrameBlobs);
         }
 
         drawAndShowContours(imgThresh.size(), blobs, "imgBlobs");
 
+
+        /* Does counting */
+        // Counting section removed
+
         imgFrame2Copy = imgFrame2.clone();	// get another copy of frame 2 since we changed the previous frame 2 copy in the processing above
 
         drawBlobInfoOnImage(blobs, imgFrame2Copy);
 
-		// Check the rightWay
-		bool blnAtLeastOneBlobCrossedTheLine = checkIfBlobsCrossedTheLineRight(blobs, intHorizontalLinePosition, carCountRight);
-		// Check the leftWay
-		bool blnAtLeastOneBlobCrossedTheLineLeft = checkIfBlobsCrossedTheLineLeft(blobs, intHorizontalLinePosition, carCountLeft);
-		
-		//rightWay
-        if (blnAtLeastOneBlobCrossedTheLine == true) {
-            cv::line(imgFrame2Copy, crossingLine[0], crossingLine[1], SCALAR_GREEN, 2);			
-        }
-		else if (blnAtLeastOneBlobCrossedTheLine == false) {
-            cv::line(imgFrame2Copy, crossingLine[0], crossingLine[1], SCALAR_RED, 2);			
-        }
-
-		//leftway
-		if (blnAtLeastOneBlobCrossedTheLineLeft == true) {
-			cv::line(imgFrame2Copy, crossingLineLeft[0], crossingLineLeft[1], SCALAR_WHITE, 2);
-		}
-		else if (blnAtLeastOneBlobCrossedTheLineLeft == false) {
-			cv::line(imgFrame2Copy, crossingLineLeft[0], crossingLineLeft[1], SCALAR_YELLOW, 2);
-		}
-
-		drawCarCountOnImage(carCountRight, imgFrame2Copy);
 
         cv::imshow("imgFrame2Copy", imgFrame2Copy);
+        outputVideo.write(imgFrame2Copy);
+        /* END counting section */
 
         //cv::waitKey(0);	// uncomment this line to go frame by frame for debugging        
 		
@@ -193,7 +220,8 @@ int main(void) {
         imgFrame1 = imgFrame2.clone();	// move frame 1 up to where frame 2 is
 
         if ((capVideo.get(CV_CAP_PROP_POS_FRAMES) + 1) < capVideo.get(CV_CAP_PROP_FRAME_COUNT)) {
-            capVideo.read(imgFrame2);
+            ret = capVideo.read(imgFrame2);
+            if (ret == false) {return(0);}
         }
         else {
             std::cout << "end of video\n";
@@ -236,7 +264,7 @@ void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std
             }
         }
 
-        if (dblLeastDistance < currentFrameBlob.dblCurrentDiagonalSize * 0.5) {
+        if (dblLeastDistance < currentFrameBlob.dblCurrentDiagonalSize * 1) {
             addBlobToExistingBlobs(currentFrameBlob, existingBlobs, intIndexOfLeastDistance);
         }
         else {
@@ -249,7 +277,7 @@ void matchCurrentFrameBlobsToExistingBlobs(std::vector<Blob> &existingBlobs, std
         if (existingBlob.blnCurrentMatchFoundOrNewBlob == false) {
             existingBlob.intNumOfConsecutiveFramesWithoutAMatch++;
         }
-        if (existingBlob.intNumOfConsecutiveFramesWithoutAMatch >= 5) {
+        if (existingBlob.intNumOfConsecutiveFramesWithoutAMatch >= 65) {
             existingBlob.blnStillBeingTracked = false;
         }
     }
@@ -303,44 +331,7 @@ void drawAndShowContours(cv::Size imageSize, std::vector<Blob> blobs, std::strin
 }
 
 
-bool checkIfBlobsCrossedTheLineRight(std::vector<Blob> &blobs, int &intHorizontalLinePosition, int &carCountRight) {    
-	bool blnAtLeastOneBlobCrossedTheLine = false;
 
-    for (auto blob : blobs) {
-        if (blob.blnStillBeingTracked == true && blob.centerPositions.size() >= 2) {
-            int prevFrameIndex = (int)blob.centerPositions.size() - 2;
-            int currFrameIndex = (int)blob.centerPositions.size() - 1;
-
-			// Left way
-			if (blob.centerPositions[prevFrameIndex].y > intHorizontalLinePosition && blob.centerPositions[currFrameIndex].y <= intHorizontalLinePosition && blob.centerPositions[currFrameIndex].x > 350) {
-                carCountRight++;												
-                blnAtLeastOneBlobCrossedTheLine = true;
-            }
-        }
-    }
-
-    return blnAtLeastOneBlobCrossedTheLine;
-}
-
-
-bool checkIfBlobsCrossedTheLineLeft(std::vector<Blob> &blobs, int &intHorizontalLinePosition, int &carCountLeft) {	
-	bool blnAtLeastOneBlobCrossedTheLineLeft = false;
-
-	for (auto blob : blobs) {
-		if (blob.blnStillBeingTracked == true && blob.centerPositions.size() >= 2) {
-			int prevFrameIndex = (int)blob.centerPositions.size() - 2;
-			int currFrameIndex = (int)blob.centerPositions.size() - 1;
-
-			// Left way
-			if (blob.centerPositions[prevFrameIndex].y <= intHorizontalLinePosition && blob.centerPositions[currFrameIndex].y > intHorizontalLinePosition && blob.centerPositions[currFrameIndex].x < 350 && blob.centerPositions[currFrameIndex].x > 0) {
-				carCountLeft++;					
-				blnAtLeastOneBlobCrossedTheLineLeft = true;
-			}
-		}
-	}
-
-	return blnAtLeastOneBlobCrossedTheLineLeft;
-}
 
 
 void drawBlobInfoOnImage(std::vector<Blob> &blobs, cv::Mat &imgFrame2Copy) {

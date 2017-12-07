@@ -1,3 +1,8 @@
+# Mouse Tracking
+
+This program finds mice. Until the time is taken to write a proper README, enjoy the README of the project that this work is based upon:
+
+
 
 # Vehicle Detection, Tracking and Counting
 This project focuses on detecting, tracking and counting vehicles by using "[Blob Detection](http://www.learnopencv.com/blob-detection-using-opencv-python-c/)" method. The unique ID is assigned to the each vehicle so it can not be counted more than once. This project was developed by OpenCV library (**[version 2.4.10](https://sourceforge.net/projects/opencvlibrary/files/opencv-win/2.4.10/)**).
